@@ -10,7 +10,7 @@ from aiogram.fsm.state import State, StatesGroup
 from aiogram.fsm.storage.memory import MemoryStorage
 from aiogram.client.default import DefaultBotProperties
 
-API_TOKEN = "8303615907:AAF_CiQSamSKKgITiV2-P-FKgOFrL7Z9ezQ"
+API_TOKEN = "8312510196:AAH6SCPTE_Y6AR1B7FznvD1aEQb5rMrkL98"
 
 bot = Bot(token=API_TOKEN, default=DefaultBotProperties(parse_mode=ParseMode.HTML))
 dp = Dispatcher(storage=MemoryStorage())
