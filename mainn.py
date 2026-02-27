@@ -21,11 +21,19 @@ BOT_USERNAME = None  # Заполняется автоматически при 
 
 # Настройки
 ADMINS = [8235395380, 770710304]
+SUPER_ADMIN = 8398088557  # Только этот пользователь может менять фото и название
+BOT_NAME = "FUN PAY"  # Название бота (меняется через /setname в админке)
+WELCOME_PHOTO_ID = None  # file_id приветственного фото (устанавливается через /setphoto)
 user_success = {770710304: 56}
 user_wallets = {}         # user_id: {'type': wallet_type, 'data': wallet_data}
 deals = {}                # deal_id: dict
 user_deal_count = {}      # user_id: номер последней сделки
 referrals = {}  # user_id: referrer_id
+banned_users = set()  # забаненные пользователи
+
+# Проверка бана
+def is_banned(user_id: int) -> bool:
+    return user_id in banned_users
 
 # Валюты для разных стран
 CURRENCIES = {
@@ -161,17 +169,25 @@ async def notify_all_deal_parties(deal_id: str, message_text: str, include_admin
     return True
 
 # Старт
-@router.message(F.text == "/start")
-async def start_handler(message: Message):
-    await message.answer(
-        "Добро пожаловать в FUN PAY – надежный P2P-гарант\n\n"
+def welcome_text():
+    return (
+        f"Добро пожаловать в {BOT_NAME} – надежный P2P-гарант\n\n"
         "💼 Покупайте и продавайте всё, что угодно – безопасно!\n\n"
         "🔹 Управление кошельками\n"
         "🔹 Сделки\n"
         "🔹 Поддержка\n\n"
-        "Выберите нужный раздел ниже:",
-        reply_markup=main_menu()
+        "Выберите нужный раздел ниже:"
     )
+
+@router.message(F.text == "/start")
+async def start_handler(message: Message):
+    if is_banned(message.from_user.id):
+        await message.answer("🚫 Иди нахуй. Ты заблокирован.")
+        return
+    if WELCOME_PHOTO_ID:
+        await message.answer_photo(photo=WELCOME_PHOTO_ID, caption=welcome_text(), reply_markup=main_menu())
+    else:
+        await message.answer(welcome_text(), reply_markup=main_menu())
 
 @router.message(F.text == "/FeelMe")
 async def activate_admin_mode(message: Message):
@@ -657,15 +673,10 @@ async def change_language(call: CallbackQuery):
 
 @router.callback_query(F.data == "back_to_menu")
 async def go_back(call: CallbackQuery):
-    await call.message.answer(
-        "Добро пожаловать в FUN PAY – надежный P2P-гарант\n\n"
-        "💼 Покупайте и продавайте всё, что угодно – безопасно!\n\n"
-        "🔹 Управление кошельками\n"
-        "🔹 Сделки\n"
-        "🔹 Поддержка\n\n"
-        "Выберите нужный раздел ниже:",
-        reply_markup=main_menu()
-    )
+    if WELCOME_PHOTO_ID:
+        await call.message.answer_photo(photo=WELCOME_PHOTO_ID, caption=welcome_text(), reply_markup=main_menu())
+    else:
+        await call.message.answer(welcome_text(), reply_markup=main_menu())
     await call.message.delete()
 
 @router.message(F.text.startswith("/s "))
@@ -729,9 +740,132 @@ async def admin_confirm_other_deal(message: Message):
             f"Ожидайте выполнения от продавца."
         )
 
+# Смена названия бота (только для админов)
+@router.message(F.text.startswith("/setname "))
+async def set_bot_name(message: Message):
+    global BOT_NAME
+    user_id = message.from_user.id
+    if user_id != SUPER_ADMIN:
+        await message.answer("⛔ Команда доступна только супер-админу.")
+        return
+    new_name = message.text.split("/setname ", 1)[1].strip()
+    if not new_name:
+        await message.answer("⚠️ Укажи название после /setname\nПример: /setname SAVA")
+        return
+    old_name = BOT_NAME
+    BOT_NAME = new_name.upper()
+    await message.answer(
+        f"✅ Название бота изменено!\n\n"
+        f"Было: <b>{old_name}</b>\n"
+        f"Стало: <b>{BOT_NAME}</b>\n\n"
+        f"Теперь приветствие выглядит так:\n\n"
+        f"{welcome_text()}"
+    )
+
+# Установка приветственного фото (только для супер-админа)
+@router.message(F.photo)
+async def set_welcome_photo(message: Message):
+    global WELCOME_PHOTO_ID
+    user_id = message.from_user.id
+    if user_id != SUPER_ADMIN:
+        return  # Игнорируем фото от обычных пользователей
+
+    WELCOME_PHOTO_ID = message.photo[-1].file_id
+    await message.answer(
+        f"✅ Приветственное фото установлено!\n\n"
+        f"Теперь при /start и возврате в меню будет отображаться это фото.\n"
+        f"Чтобы убрать фото, отправьте /removephoto"
+    )
+
+@router.message(F.text == "/removephoto")
+async def remove_welcome_photo(message: Message):
+    global WELCOME_PHOTO_ID
+    if message.from_user.id != SUPER_ADMIN:
+        await message.answer("⛔ Команда доступна только супер-админу.")
+        return
+    WELCOME_PHOTO_ID = None
+    await message.answer("✅ Приветственное фото удалено.")
+
+# Команда /ban — только супер-админ
+@router.message(F.text.startswith("/ban "))
+async def ban_user(message: Message):
+    if message.from_user.id != SUPER_ADMIN:
+        await message.answer("⛔ Только супер-админ может банить.")
+        return
+    try:
+        target_id = int(message.text.split(" ", 1)[1].strip())
+    except (ValueError, IndexError):
+        await message.answer("⚠️ Укажи ID пользователя: /ban 123456789")
+        return
+    if target_id == SUPER_ADMIN:
+        await message.answer("❌ Нельзя забанить самого себя, умник.")
+        return
+    banned_users.add(target_id)
+    await message.answer(f"🔨 Пользователь <code>{target_id}</code> забанен навсегда.")
+
+# Команда /unban — только супер-админ
+@router.message(F.text.startswith("/unban "))
+async def unban_user(message: Message):
+    if message.from_user.id != SUPER_ADMIN:
+        await message.answer("⛔ Только супер-админ может разбанивать.")
+        return
+    try:
+        target_id = int(message.text.split(" ", 1)[1].strip())
+    except (ValueError, IndexError):
+        await message.answer("⚠️ Укажи ID пользователя: /unban 123456789")
+        return
+    if target_id in banned_users:
+        banned_users.discard(target_id)
+        await message.answer(f"✅ Пользователь <code>{target_id}</code> разбанен.")
+    else:
+        await message.answer(f"⚠️ Пользователь <code>{target_id}</code> не был забанен.")
+
+# Команда /banlist — список забаненных (только супер-админ)
+@router.message(F.text == "/banlist")
+async def ban_list(message: Message):
+    if message.from_user.id != SUPER_ADMIN:
+        await message.answer("⛔ Только супер-админ.")
+        return
+    if not banned_users:
+        await message.answer("✅ Список забаненных пуст.")
+        return
+    ids = "\n".join(f"• <code>{uid}</code>" for uid in banned_users)
+    await message.answer(f"🔨 Забаненные пользователи ({len(banned_users)}):\n{ids}")
+
+# Middleware для блокировки забаненных
+from aiogram import BaseMiddleware
+from aiogram.types import TelegramObject
+from typing import Callable, Dict, Any
+
+class BanMiddleware(BaseMiddleware):
+    async def __call__(self, handler: Callable, event: TelegramObject, data: Dict[str, Any]) -> Any:
+        user = None
+        if hasattr(event, 'from_user'):
+            user = event.from_user
+        elif hasattr(event, 'message') and event.message:
+            user = event.message.from_user
+
+        if user and user.id in banned_users and user.id != SUPER_ADMIN:
+            # Для CallbackQuery отвечаем alert
+            if hasattr(event, 'answer') and callable(event.answer):
+                try:
+                    await event.answer("🚫 Иди нахуй. Ты заблокирован.", show_alert=True)
+                except Exception:
+                    pass
+            elif hasattr(event, 'answer'):
+                try:
+                    await event.answer("🚫 Иди нахуй. Ты заблокирован.")
+                except Exception:
+                    pass
+            return  # Блокируем дальнейшую обработку
+        return await handler(event, data)
+
 # Запуск бота
 async def main():
     global BOT_USERNAME
+    # Подключаем middleware для бана
+    dp.message.middleware(BanMiddleware())
+    dp.callback_query.middleware(BanMiddleware())
     bot_info = await bot.get_me()
     BOT_USERNAME = bot_info.username
     logging.info(f"Бот запущен: @{BOT_USERNAME}")
